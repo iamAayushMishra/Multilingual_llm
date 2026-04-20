@@ -2,7 +2,7 @@
 
 NCERT-Mitra is an AI-powered chatbot designed to help students in classes 6-8 understand their NCERT curriculum. Using a Retrieval-Augmented Generation (RAG) approach, it answers questions based on the actual content of the textbooks, providing accurate and context-aware responses with source references.
 
-![NCERT-Mitra Screenshot](https://i.imgur.com/39hD12T.png)
+[NCERT-Mitra Screenshot](https://i.imgur.com/39hD12T.png)
 
 ## ✨ Features
 
