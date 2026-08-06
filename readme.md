@@ -1,6 +1,6 @@
 # 📚 NCERT-Mitra: Multilingual AI Learning Assistant
 
-NCERT-Mitra is an advanced, AI-powered learning assistant designed to help students (classes 6-8) interactively study their NCERT curriculum. Utilizing a **Retrieval-Augmented Generation (RAG)** architecture with a modern, high-performance tech stack, it performs hybrid searches, re-ranking, and semantic caching to provide accurate, context-grounded answers in both English and Hindi.
+NCERT-Mitra is an advanced, AI-powered learning assistant designed to help students  interactively study their NCERT curriculum. Utilizing a **Retrieval-Augmented Generation (RAG)** architecture with a modern, high-performance tech stack, it performs hybrid searches, re-ranking, and semantic caching to provide accurate, context-grounded answers in both English and Hindi.
 
 ---
 
