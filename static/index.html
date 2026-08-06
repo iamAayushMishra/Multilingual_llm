@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCERT-Mitra — Multilingual Assistant</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Drawer (Filters) -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-text">NCERT-Mitra</div>
+                <span class="status-badge" id="server-status">Connecting...</span>
+            </div>
+            
+            <div class="filter-section">
+                <h3>Textbook Filters</h3>
+                <p class="filter-desc">Restrict the search context to specific categories.</p>
+                
+                <div class="filter-group">
+                    <label for="class-select">Class / Grade</label>
+                    <select id="class-select">
+                        <option value="">All Classes</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="subject-select">Subject</label>
+                    <select id="subject-select">
+                        <option value="">All Subjects</option>
+                    </select>
+                </div>
+                
+                <button id="clear-filters-btn" class="btn btn-secondary">Clear Filters</button>
+            </div>
+            
+            <div class="sidebar-footer">
+                <p>v1.2.0 • Powered by Gemini & ChromaDB</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="main-header">
+                <h1>Ask Your Textbooks</h1>
+                <p>Enter your question in English or Hindi. The RAG pipeline will search your textbooks and answer you in your language.</p>
+            </header>
+
+            <!-- Search Bar Interface -->
+            <section class="search-section">
+                <div class="search-bar-wrapper">
+                    <textarea id="query-input" placeholder="Type your question here... (e.g. Why is the donkey considered a fool?)" rows="2" required></textarea>
+                    <button id="search-btn" class="btn btn-primary">
+                        <span id="btn-text">Ask Mitra</span>
+                        <div class="spinner" id="search-spinner" style="display: none;"></div>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading Indicator -->
+            <section class="loading-section" id="loading-indicator" style="display: none;">
+                <div class="pulse-container">
+                    <div class="pulse-bubble pulse-bubble-1"></div>
+                    <div class="pulse-bubble pulse-bubble-2"></div>
+                    <div class="pulse-bubble pulse-bubble-3"></div>
+                </div>
+                <p>Mitra is searching & re-ranking pages...</p>
+            </section>
+
+            <!-- Results Panel -->
+            <section class="results-section" id="results-panel" style="display: none;">
+                <!-- Performance Statistics -->
+                <div class="stats-bar">
+                    <div class="stat-item">
+                        <span class="stat-label">Latency:</span>
+                        <span class="stat-value" id="stat-latency">--</span>
+                    </div>
+                    <div class="stat-badge-wrapper" id="cache-badge-container">
+                        <!-- Caching badge will be injected here dynamically -->
+                    </div>
+                </div>
+
+                <!-- Answer Container -->
+                <div class="card answer-card">
+                    <h2>Mitra's Answer</h2>
+                    <div class="answer-text" id="answer-content">
+                        <!-- Generated answer markdown or text -->
+                    </div>
+                </div>
+
+                <!-- Sources Container -->
+                <div class="sources-wrapper">
+                    <h3>Retrieved Source Materials</h3>
+                    <div class="sources-grid" id="sources-container">
+                        <!-- Source cards dynamically loaded -->
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

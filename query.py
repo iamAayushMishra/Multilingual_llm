@@ -1,55 +1,109 @@
 import os
+import sys
+import codecs
 import chromadb
 from chromadb.utils import embedding_functions
 import google.generativeai as genai
 from dotenv import load_dotenv
+from langdetect import detect, DetectorFactory
+
+# Reconfigure stdout/stderr for Windows consoles to support Hindi printing
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
+
+# Ensure language detection is deterministic
+DetectorFactory.seed = 0
+
+from retrieval_pipeline import AdvancedRetrievalPipeline
+from semantic_cache import SemanticCache
 
 # --- CONFIGURATION ---
-# Load environment variables from .env file
 load_dotenv()
 
-# Configure the Gemini API key
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 except AttributeError:
     print("Error: GOOGLE_API_KEY not found. Please ensure you have a .env file with the key.")
     exit()
 
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "ncert_db")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ncert_books")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2")
+CROSS_ENCODER_MODEL_NAME = os.getenv("CROSS_ENCODER_MODEL_NAME", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
+SEMANTIC_CACHE_DB_PATH = os.getenv("SEMANTIC_CACHE_DB_PATH", "semantic_cache.db")
+SEMANTIC_CACHE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.92"))
+RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "4"))
 
-# Same configuration as in ingest.py
-CHROMA_PERSIST_DIR = "ncert_db"
-COLLECTION_NAME = "ncert_books"
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
-# --- MAIN APPLICATION LOGIC ---
+def detect_language(text):
+    """Detects the language of the query. Defaults to 'en' on failure."""
+    try:
+        lang = detect(text)
+        return lang
+    except Exception:
+        return "en"
+
+
+def translate_query_if_needed(query_text, source_lang, target_lang="hi", model=None):
+    """
+    If the query is not in the target language (e.g. Hindi), translate it using Gemini
+    so that exact keyword match (BM25) will work on the Hindi index.
+    """
+    if source_lang == target_lang:
+        return query_text
+        
+    print(f"Translating query from '{source_lang}' to '{target_lang}' for optimal search...")
+    prompt = f"Translate the following search query into search keywords/phrases in Hindi (without extra text or explanations):\nQuery: {query_text}"
+    
+    try:
+        response = model.generate_content(prompt)
+        translated = response.text.strip()
+        print(f"Search Query Translation: '{translated}'")
+        return translated
+    except Exception as e:
+        print(f"Translation error: {e}. Using original query.")
+        return query_text
+
 
 def main():
-    """
-    Main function to run the query application.
-    """
-    # --- 1. Initialize ChromaDB Client and Embedding Function ---
-    print("Initializing ChromaDB client...")
+    # --- 1. Load ChromaDB & Models ---
+    print("Initializing embedding function...")
     embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=EMBEDDING_MODEL_NAME
     )
 
+    print("Connecting to ChromaDB...")
     db_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+    
+    try:
+        collection = db_client.get_collection(
+            name=COLLECTION_NAME,
+            embedding_function=embedding_function
+        )
+    except Exception:
+        print(f"Error: Collection '{COLLECTION_NAME}' not found. Please run ingest.py first.")
+        return
 
-    # Get the existing collection
-    collection = db_client.get_collection(
-        name=COLLECTION_NAME,
-        embedding_function=embedding_function
+    # Initialize Advanced Retrieval Pipeline and Semantic Cache
+    retriever = AdvancedRetrievalPipeline(
+        chroma_collection=collection,
+        cross_encoder_model_name=CROSS_ENCODER_MODEL_NAME
+    )
+    cache = SemanticCache(
+        db_path=SEMANTIC_CACHE_DB_PATH,
+        threshold=SEMANTIC_CACHE_THRESHOLD
     )
     
-    # --- 2. Initialize Gemini Model ---
-    print("Initializing Gemini Pro model...")
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    print("Initializing Gemini model...")
+    model = genai.GenerativeModel(GEMINI_MODEL_NAME)
     
-    print("\n--- NCERT-Mitra AI Assistant ---")
-    print("Ask any question about your NCERT books.")
+    print("\n--- NCERT-Mitra AI Assistant (Multilingual + Cache + Re-ranking) ---")
+    print("Ask any question about your NCERT books in English or Hindi.")
     print("Type 'exit' to quit.\n")
 
-    # --- 3. Interactive Q&A Loop ---
+    # --- 2. Q&A Loop ---
     while True:
         user_query = input("You: ")
         if user_query.lower() == 'exit':
@@ -58,52 +112,85 @@ def main():
         
         if not user_query.strip():
             continue
+            
+        # A. Language Detection
+        user_lang = detect_language(user_query)
+        print(f"[Language Detected]: {user_lang}")
+        
+        # B. Check Semantic Cache
+        # We need the query's embedding to check the semantic cache
+        query_embedding = embedding_function([user_query])[0]
+        cached_hit = cache.get(user_query, query_embedding)
+        
+        if cached_hit:
+            response, sources, matched_query, similarity = cached_hit
+            print("\nNCERT-Mitra (FROM SEMANTIC CACHE):")
+            print(response)
+            print("\n--- Sources ---")
+            for source in sources:
+                print(f"- {source} (Cache Match: '{matched_query}' - Sim: {similarity:.2%})")
+            print("\n" + "="*50 + "\n")
+            continue
 
-        # --- 4. Retrieve Relevant Context from ChromaDB ---
-        print("Searching for relevant context...")
-        # Query the collection to get the 5 most relevant chunks
-        results = collection.query(
-            query_texts=[user_query],
-            n_results=5
+        # C. Query Preprocessing / Translation
+        # Translate to Hindi if query is English, since target PDFs are Hindi ('ihga101' series)
+        search_query = translate_query_if_needed(user_query, user_lang, "hi", model)
+        
+        # D. Advanced Hybrid Retrieval & Re-ranking
+        print("Searching and re-ranking relevant contexts...")
+        retrieved_documents, sources = retriever.retrieve_hybrid_and_rerank(
+            query=search_query,
+            top_k=RETRIEVAL_TOP_K
         )
         
-        retrieved_documents = results['documents'][0]
+        if not retrieved_documents:
+            print("\nNCERT-Mitra:")
+            print("I am sorry, but I cannot find any relevant documents to answer that question.")
+            print("\n" + "="*50 + "\n")
+            continue
+            
         context = "\n\n".join(retrieved_documents)
         
-        # --- 5. Generate the Prompt for the LLM ---
-        # This is a crucial step known as Prompt Engineering
+        # E. Prompt Formulation (Cross-lingual support instruction)
         prompt_template = f"""
         You are a helpful AI assistant for students named "NCERT-Mitra".
         Your task is to answer the user's question based ONLY on the context provided below.
-        If the context does not contain the answer, you MUST say "I am sorry, but I cannot find the answer to that question in the provided material."
-        Do not use any external knowledge. Be concise and clear in your explanation.
+        
+        CRITICAL RULES:
+        1. Answer the question in the SAME language that the user asked it. If they asked in English, answer in English. If they asked in Hindi, answer in Hindi.
+        2. If the context does not contain the answer, you MUST say "I am sorry, but I cannot find the answer to that question in the provided material." in the user's language.
+        3. Do not use any external knowledge. Be concise and clear in your explanation.
 
-        CONTEXT:
+        CONTEXT (in Hindi):
         ---
         {context}
         ---
 
-        USER'S QUESTION:
+        USER'S QUESTION (original):
         {user_query}
 
         YOUR ANSWER:
         """
 
-        # --- 6. Call the LLM to Generate an Answer ---
+        # F. Call Gemini
         print("Generating answer...")
+        success = False
         try:
             response = model.generate_content(prompt_template)
             answer = response.text
+            success = True
         except Exception as e:
             answer = f"An error occurred while generating the answer: {e}"
 
-        # --- 7. Display the Answer and Sources ---
+        # G. Save to Semantic Cache only on success
+        if success:
+            cache.set(user_query, query_embedding, answer, sources)
+
+        # H. Display Output
         print("\nNCERT-Mitra:")
         print(answer)
         
-        # Display the sources of the retrieved documents
         print("\n--- Sources ---")
-        sources = set(meta['source'] for meta in results['metadatas'][0])
         for source in sources:
             print(f"- {source}")
         print("\n" + "="*50 + "\n")

@@ -1,0 +1,12 @@
+streamlit
+chromadb
+sentence-transformers
+langchain
+langchain-community
+pypdf
+tqdm
+google-generativeai
+python-dotenv
+langdetect
+reportlab
+pandas
